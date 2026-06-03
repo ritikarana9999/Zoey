@@ -15,10 +15,9 @@ import type {
   Store,
 } from '@/types'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-
+// Use relative URL so Next.js rewrites proxy to backend — works in Codespaces and local
 const api = axios.create({
-  baseURL: API_URL,
+  baseURL: '',
   timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
