@@ -139,7 +139,6 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
 
     product = dict(row)
 
-    # Get current prices per store
     prices_query = text("""
         SELECT DISTINCT ON (ph.store_id)
             ph.store_id::text,
@@ -157,7 +156,6 @@ def get_product(product_id: str, db: Session = Depends(get_db)):
     prices_result = db.execute(prices_query, {"product_id": product_id})
     product["store_prices"] = [dict(r) for r in prices_result.mappings().all()]
 
-    # Price stats
     stats_query = text("""
         SELECT
             ROUND(MIN(price)::NUMERIC, 2) AS min_price,
@@ -193,27 +191,63 @@ def get_price_history(
         FROM price_history ph
         JOIN stores s ON s.id = ph.store_id
         WHERE ph.product_id = :product_id
-          AND ph.date_captured >= CURRENT_DATE - INTERVAL ':days days'
-    """
-    params = {"product_id": product_id, "days": days}
-
-    if store_id:
-        query += " AND ph.store_id = :store_id"
-        params["store_id"] = store_id
-
-    query = """
-        SELECT
-            ph.date_captured::text AS date,
-            ph.price,
-            ph.is_on_sale,
-            ph.original_price,
-            s.name AS store_name,
-            s.slug AS store_slug
-        FROM price_history ph
-        JOIN stores s ON s.id = ph.store_id
-        WHERE ph.product_id = :product_id
           AND ph.date_captured >= CURRENT_DATE - :days * INTERVAL '1 day'
         ORDER BY ph.date_captured, s.name
     """
     result = db.execute(text(query), {"product_id": product_id, "days": days})
     return [dict(r) for r in result.mappings().all()]
+
+
+@router.post("", response_model=dict, status_code=201)
+def create_product(payload: dict, db: Session = Depends(get_db)):
+    """Create a new product with an initial price entry."""
+    from uuid import uuid4
+
+    cat_row = db.execute(
+        text("SELECT id FROM categories WHERE slug = :slug"),
+        {"slug": payload.get("category_slug", "pantry")}
+    ).mappings().first()
+    category_id = str(cat_row["id"]) if cat_row else None
+
+    product_id = str(uuid4())
+    db.execute(text("""
+        INSERT INTO products (id, name, brand, category_id, weight_volume, description, is_active, created_at, updated_at)
+        VALUES (:id, :name, :brand, :category_id, :weight_volume, :description, TRUE, NOW(), NOW())
+    """), {
+        "id": product_id,
+        "name": payload["name"],
+        "brand": payload.get("brand", ""),
+        "category_id": category_id,
+        "weight_volume": payload.get("weight_volume", ""),
+        "description": payload.get("description", ""),
+    })
+
+    for store_price in payload.get("store_prices", []):
+        store_row = db.execute(
+            text("SELECT id FROM stores WHERE slug = :slug"),
+            {"slug": store_price["store_slug"]}
+        ).mappings().first()
+        if not store_row:
+            continue
+        store_id = str(store_row["id"])
+
+        sp_id = str(uuid4())
+        db.execute(text("""
+            INSERT INTO store_products (id, product_id, store_id, is_available, created_at)
+            VALUES (:id, :product_id, :store_id, TRUE, NOW())
+            ON CONFLICT (product_id, store_id) DO NOTHING
+        """), {"id": sp_id, "product_id": product_id, "store_id": store_id})
+
+        db.execute(text("""
+            INSERT INTO price_history (id, product_id, store_id, price, unit_price, is_on_sale, captured_at, date_captured)
+            VALUES (:id, :product_id, :store_id, :price, :unit_price, FALSE, NOW(), CURRENT_DATE)
+        """), {
+            "id": str(uuid4()),
+            "product_id": product_id,
+            "store_id": store_id,
+            "price": float(store_price["price"]),
+            "unit_price": float(store_price["price"]),
+        })
+
+    db.commit()
+    return {"id": product_id, "name": payload["name"], "message": "Product created successfully"}
