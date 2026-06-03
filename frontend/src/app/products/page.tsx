@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { SlidersHorizontal, Search } from 'lucide-react'
+import { Search, Plus } from 'lucide-react'
 import { ProductCard } from '@/components/products/ProductCard'
+import { AddProductModal } from '@/components/products/AddProductModal'
 import { productsApi } from '@/lib/api'
 import type { Product, Category } from '@/types'
 
@@ -12,6 +13,8 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
+  const [showAdd, setShowAdd] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(() => {
     productsApi.getCategories().then(setCategories).catch(() => {})
@@ -35,13 +38,18 @@ export default function ProductsPage() {
     }
     const timer = setTimeout(loadProducts, 300)
     return () => clearTimeout(timer)
-  }, [search, selectedCategory])
+  }, [search, selectedCategory, refreshKey])
 
   return (
     <div className="space-y-6 animate-fade-in">
-      <div>
-        <h2 className="text-2xl font-bold text-white">Products</h2>
-        <p className="text-slate-400 mt-1">{products.length} products tracked across 3 stores</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Products</h2>
+          <p className="text-slate-400 mt-1">{products.length} products tracked across 3 stores</p>
+        </div>
+        <button onClick={() => setShowAdd(true)} className="btn-primary flex items-center gap-2">
+          <Plus className="w-4 h-4" /> Add Product
+        </button>
       </div>
 
       {/* Filters */}
@@ -104,8 +112,12 @@ export default function ProductsPage() {
         </div>
       ) : products.length === 0 ? (
         <div className="text-center py-20">
-          <p className="text-4xl mb-3">🔍</p>
-          <p className="text-slate-400">No products found. Try a different search or category.</p>
+          <p className="text-5xl mb-4">🛒</p>
+          <p className="text-xl font-semibold text-white mb-2">No products yet</p>
+          <p className="text-slate-400 mb-6">Start by adding a grocery product to track its price across stores.</p>
+          <button onClick={() => setShowAdd(true)} className="btn-primary inline-flex items-center gap-2">
+            <Plus className="w-4 h-4" /> Add Your First Product
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -113,6 +125,15 @@ export default function ProductsPage() {
             <ProductCard key={product.id} product={product} />
           ))}
         </div>
+      )}
+
+      {showAdd && (
+        <AddProductModal
+          onClose={() => setShowAdd(false)}
+          onSuccess={() => {
+            setRefreshKey(k => k + 1)
+          }}
+        />
       )}
     </div>
   )
